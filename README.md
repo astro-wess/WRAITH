@@ -1,6 +1,6 @@
-# WRAITH: A Pipeline for Galaxy Image Analysis with IMFIT
+# WRAITH Data Analyser
 
-WRAITH (Workflow for Running Astronomical Image-fitting Tasks with HSC) is a Python-based pipeline designed to automate the process of fitting astronomical images with IMFIT. It handles the entire workflow, from downloading data and generating masks to running IMFIT and processing the results.
+WRAITH is a Python-based pipeline designed to automate the process of fitting astronomical images with IMFIT. It handles the entire workflow, from downloading data and generating masks to running IMFIT and processing the results.
 
 ## Features
 
