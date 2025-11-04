@@ -1,0 +1,23 @@
+X0	0.0	0,0
+Y0	0.0	0,0
+FUNCTION   Sersic   # for the bulge		
+PA	130	110,150
+ell	0.5	0,0.8
+n	1.0	0.5,7.0
+I_e	0.0	0,0
+r_e	0.0	0,0
+
+FUNCTION FerrersBar2D
+PA	130	110,150	# deg (CCW from +y axis)
+ell	0.5	0,0.8
+c0	1	0.,10
+n	1	0.5,5
+I_0	15	5,30	# counts/pixel
+a_bar	30	20,50	# pixels
+
+FUNCTION   Sersic   # for the disk		
+PA	130	110,150
+ell	0.5	0.,0.8
+n	1.0	fixed
+I_e	2.0	0,20
+r_e	30.0	0,60

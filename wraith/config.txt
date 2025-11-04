@@ -1,0 +1,33 @@
+###################### Prologue configs #############################
+
+SAMPLE_NAME  folder_name
+
+HSC_ID       userID
+HSC_PASS     userPASSWORD
+
+IMAGE_SIZE   30                     # Image size (asec).
+FILTER       r
+
+#################### General Imfit configs ##########################
+
+USE_DEFAULT_SERSIC      0             # 0 to not use default archives (specify IMFIT_CONFIGFILE) 1 to use default.
+IMFIT_CONFIGFILE        NONE          # Name of the imfit configuration file, can be NONE if USE_DEFAULT_SERSIC is 1.
+CONSECUTIVE_RUNS        1             # Number of consecutive runs.
+
+
+###################### Parameters to run ############################
+#####################################################################
+##################### Following the example #########################
+
+# First run 
+
+COMPONENTS    1
+IMFIT_TYPE    de            # Process that imfit will use to run.
+
+# Second run
+
+COMPONENTS2    2
+IMFIT_TYPE2    nm           # Process that imfit will use to run.
+
+# Four consecutive runs supported
+

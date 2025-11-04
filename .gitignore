@@ -1,0 +1,33 @@
+# --- Binários e Caches ---
+__pycache__/
+wraith/imfit
+wraith/makeimage
+wraith/__init__.py
+
+# --- Arquivos de Configuração Sensíveis ---
+# (Descomente a linha abaixo se seu S0config.txt tiver senhas)
+# S0config.txt
+
+# --- Arquivos Temporários do Mask ---
+cold.fits
+hot.fits
+combined_map.fits
+modified_map.fits
+
+# --- Listas de Download Geradas ---
+*gal.txt
+*psf.txt
+
+# --- Logs de Erro ---
+log_reports/
+
+# --- Pastas de Saída de Amostras ---
+# (Adicione aqui o SAMPLE_NAME do seu config)
+S0s/
+
+# --- Arquivos de Dados (em geral) ---
+*.fits
+
+# --- Arquivos de Sistema (Boa prática) ---
+.DS_Store
+*.swp
