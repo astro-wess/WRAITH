@@ -14,9 +14,14 @@ hot.fits
 combined_map.fits
 modified_map.fits
 
-# --- Listas de Download Geradas ---
-*gal.txt
-*psf.txt
+# --- Listas e arquivos de configuração de amostras ---
+config_testes.txt
+testes.csv
+
+# --- Arquivos desnecessários gerados pelo Source-Extractor ---
+sex.param
+catalog.cat
+default.nnw
 
 # --- Logs de Erro ---
 log_reports/
@@ -24,6 +29,7 @@ log_reports/
 # --- Pastas de Saída de Amostras ---
 # (Adicione aqui o SAMPLE_NAME do seu config)
 S0s/
+Testes/
 
 # --- Arquivos de Dados (em geral) ---
 *.fits

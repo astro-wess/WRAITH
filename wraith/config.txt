@@ -23,11 +23,13 @@ CONSECUTIVE_RUNS        1             # Number of consecutive runs.
 
 COMPONENTS    1
 IMFIT_TYPE    de            # Process that imfit will use to run.
+CHECKS1       5             # Max re-run attempts for this run
 
 # Second run
 
 COMPONENTS2    2
 IMFIT_TYPE2    nm           # Process that imfit will use to run.
+CHECKS2       5             # Max re-run attempts for this run
 
 # Four consecutive runs supported
 

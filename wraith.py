@@ -9,57 +9,119 @@ def process_galaxy(params, gal_file, filename, list_file, custom_funcs=None, man
     """Executes the full pipeline for a single galaxy."""
     print(f"Processing {filename}...")
 
-    # Generate maps and mask
+    # 1. Masking (common to both modes)
     mask.make_maps(gal_file)
     mask.combine_maps()
     mask.remove_central_object()
     mask.apply_mask(params.name, filename, gal_file)
 
-    # Config Generation and Run Logic
-    components_to_run = params.components # Default
-    imfit_type_to_run = params.imfit_type
-    config_file_path = "" # We need the path for manual editing
-
+    # 2. Execution Logic Branch
     if custom_funcs:
-        # Single Mode with --funcs
+        # =================================================
+        # BRANCH 1: SINGLE GALAXY MODE (--funcs was used)
+        # =================================================
+        # This mode runs ONCE based on --funcs, not consecutive_runs
+        
         print(f"Generating custom configuration with: {', '.join(custom_funcs)}")
-        # This function must now return (count, file_path)
         components_to_run, config_file_path = run_imfit.generate_custom_config(params.name, custom_funcs, filename, gal_file)
         
-        # Manual editing block
         if manual_edit:
             print(f"Entering manual edit mode for: {config_file_path}")
             try:
-                # We pass the functions list to name Sersic_1, Sersic_2, etc.
                 run_imfit.manually_edit_config_file(config_file_path, custom_funcs)
                 print("Manual editing complete.")
             except Exception as e:
                 print(f"Error during manual editing: {e}. Aborting.")
                 return
 
-    elif params.use_def == 1:
-        # Sample Mode (or single without --funcs)
-        print(f"Generating default Sersic configuration ({params.components} comps)...")
-        # This function must also return (count, file_path)
-        components_count, config_file_path = run_imfit.generate_defconfig(params.name, str(params.components), filename, gal_file)
-        components_to_run = components_count
-    
+        # Use the 'checks1' param as the default for single mode checks
+        max_checks = params.checks1 
+        
+        print(f"Running Imfit (Single Mode) with {components_to_run} components...")
+        run_imfit.run_imfit_with_check(
+            params.name, 
+            str(components_to_run), 
+            filename, 
+            gal_file, 
+            params.imfit_type, # Single mode can just use the default imfit_type
+            max_checks
+        )
+
+        # Call the new "resetting" results function
+        process_data.get_results_single(params.name, filename, gal_file, list_file, str(components_to_run), params.filter)
+
     else:
-        # Mode with custom config file (IMFIT_CONFIGFILE)
-        print(f"Using specified config file: {params.imfit_configfile}")
-        config_file_path = params.imfit_configfile # Assumes this is a valid path
-        components_to_run = params.components 
+        # =================================================
+        # BRANCH 2: SAMPLE MODE (default)
+        # =================================================
+        # This mode loops through consecutive_runs
+        
+        previous_best_fit_file = None
+        last_components_run = "0"
+        
+        print(f"Starting Sample Mode processing with {params.consecutive} consecutive run(s)...")
 
-    # Run Imfit (run_imfit_with_check uses the correct config file)
-    print(f"Running Imfit with {components_to_run} components...")
-    run_imfit.run_imfit_with_check(params.name, str(components_to_run), filename, gal_file, imfit_type_to_run)
+        for i in range(params.consecutive):
+            run_info = params.run_definitions[i]
+            components_to_run = str(run_info['components'])
+            imfit_type_to_run = run_info['imfit_type']
+            checks_for_this_run = run_info['checks']
+            
+            print(f"--- Running Pass {i+1}/{params.consecutive} (Components: {components_to_run}) ---")
 
-    # Extract results
-    process_data.get_results(params.name, filename, gal_file, list_file, str(components_to_run), params.filter)
+            # Config Generation Logic
+            if i == 0:
+                # First run: Use standard default config
+                print("Generating default config for first pass...")
+                _, config_file_path = run_imfit.generate_defconfig(params.name, components_to_run, filename, gal_file)
+            else:
+                # Subsequent runs: Use chained config
+                if previous_best_fit_file is None:
+                    print("Error: Chained run (i > 0) has no previous best_fit file. Aborting.")
+                    return
+                print(f"Generating chained config from: {previous_best_fit_file}")
+                _, config_file_path = run_imfit.generate_chained_config(params.name, components_to_run, filename, gal_file, previous_best_fit_file)
+
+            # Run Imfit
+            run_imfit.run_imfit_with_check(
+                params.name, 
+                components_to_run, 
+                filename, 
+                gal_file, 
+                imfit_type_to_run,
+                checks_for_this_run
+            )
+            
+            # Save path for the next loop (or for get_results)
+            def_name = os.path.splitext(filename)[0]
+            previous_best_fit_file = f'./{params.name}/results/{def_name}_best{components_to_run}comp.dat'
+            last_components_run = components_to_run
+
+            if not os.path.exists(previous_best_fit_file):
+                print(f"Error: Best-fit file {previous_best_fit_file} was not created. Stopping chained run.")
+                return # Stop if a run fails
+
+        # After ALL loops, save the results of the FINAL run
+        print("Chained runs complete. Saving final results...")
+        process_data.get_results(params.name, filename, gal_file, list_file, last_components_run, params.filter)
+
     print(f"Galaxy {filename} processed successfully!\n")
 
 
 def main():
+    """
+    The main entry point for the WRAITH pipeline script.
+
+    This function parses command-line arguments to determine the operating mode (either 'sample' or 'single')
+    and orchestrates the galaxy processing workflow. In 'sample' mode, it iterates over a list of galaxies
+    from a CSV file, downloading data and running the pipeline for each. In 'single' mode, it processes a
+    single galaxy, which can be specified either by a local FITS file or by celestial coordinates for download.
+    It handles the initialization of parameters, directory setup, and calls the `process_galaxy` function
+    to execute the core pipeline.
+
+    The script is designed to be run from the command line and uses `argparse` to manage its various options
+    and subcommands, providing a flexible interface for different use cases.
+    """
     parser = argparse.ArgumentParser(description="Pipeline to run IMFIT on samples or single galaxies.")
 
     # General arguments

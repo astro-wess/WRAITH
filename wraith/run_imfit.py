@@ -12,7 +12,22 @@ from astropy.io import fits
 # ===================================================================
 
 def _get_major_axis_angle(hdu_data):
-    """Calculates the galaxy's angle and ellipticity."""
+    """
+    Calculates the major axis position angle (PA) and ellipticity of a galaxy from its FITS data.
+
+    This function processes the galaxy's image data to determine its orientation and shape.
+    It uses computer vision techniques, specifically contour detection and ellipse fitting,
+    to estimate the position angle and ellipticity. These values are crucial for providing
+    initial guesses for the IMFIT model.
+
+    Args:
+        hdu_data (numpy.ndarray): The 2D numpy array representing the galaxy's FITS image data.
+
+    Returns:
+        tuple: A tuple containing:
+            - float: The calculated position angle of the major axis in degrees.
+            - float: The calculated ellipticity of the galaxy.
+    """
     # Normalize values to 0-255 range
     hdu_data = np.nan_to_num(hdu_data)  # Remove NaNs
     hdu_data = (hdu_data - np.min(hdu_data)) / (np.max(hdu_data) - np.min(hdu_data)) * 255
@@ -54,7 +69,22 @@ def _get_major_axis_angle(hdu_data):
     return angle, ellipticity
 
 def _find_max_value_coordinates(image_data, center_radius):
-    """Finds the brightest pixel near the center."""
+    """
+    Finds the coordinates of the brightest pixel within a specified radius of the image center.
+
+    This function is used to get a precise estimate of the galaxy's center, which may not be
+    exactly at the geometric center of the FITS cutout. It searches a square region around the
+    center and returns the coordinates of the pixel with the highest flux value.
+
+    Args:
+        image_data (numpy.ndarray): The 2D numpy array representing the galaxy's FITS image data.
+        center_radius (int): The half-width of the square search region around the center (in pixels).
+
+    Returns:
+        tuple: A tuple containing:
+            - int: The x-coordinate of the brightest pixel.
+            - int: The y-coordinate of the brightest pixel.
+    """
     center_x, center_y = image_data.shape[1] // 2, image_data.shape[0] // 2
     
     # Ensure the radius doesn't go out of bounds
@@ -74,7 +104,23 @@ def _find_max_value_coordinates(image_data, center_radius):
     return x0, y0
 
 def _find_pixel_count_until_value(image_data, x0, y0, reference_value):
-    """Counts pixels from center until a reference value (r_e estimate)."""
+    """
+    Estimates the effective radius (r_e) by counting pixels from the center outwards.
+
+    This function provides a rough estimate for the effective radius by counting the number
+    of pixels along the y-axis, starting from the galaxy's center, until the pixel value
+    drops below a certain reference value. This is a simple but effective way to get an
+    initial guess for `r_e` for the IMFIT model.
+
+    Args:
+        image_data (numpy.ndarray): The 2D numpy array of the galaxy's FITS image.
+        x0 (int): The x-coordinate of the galaxy's center.
+        y0 (int): The y-coordinate of the galaxy's center.
+        reference_value (float): The pixel value threshold at which to stop counting.
+
+    Returns:
+        int: The estimated effective radius in pixels. Returns a minimum of 1.
+    """
     count = 0
     for i in range(y0, image_data.shape[0]):
         if i >= image_data.shape[0] or x0 >= image_data.shape[1]:
@@ -89,36 +135,74 @@ def _find_pixel_count_until_value(image_data, x0, y0, reference_value):
 # ===================================================================
 
 def _validate_param_input(user_input, param_name):
-    """Validates user input (e.g., '150.0 100,200')."""
+    """
+    Validates user input for manual parameter editing.
+
+    This helper function checks if the user's input during manual editing is in the correct
+    format, which should be `<value> <min,max>`. It ensures that the input can be parsed
+    into a floating-point value and two floating-point limits.
+
+    Args:
+        user_input (str): The string input by the user.
+        param_name (str): The name of the parameter being edited.
+
+    Returns:
+        str or None: A formatted string for the config file if the input is valid,
+                     otherwise None.
+    """
     parts = user_input.split()
     # Must be <value> <min,max>
     if len(parts) != 2:
-        print(f"Invalid format. Use: <value> <min,max>. Ex: 150.0 100,200")
+        print(f"Invalid format. Use: <value> <min,max>. Ex: 150.0 100,200 or 150.0 fixed")
         return None
     
     value_str = parts[0]
     limits_str = parts[1]
-    
-    if ',' not in limits_str:
-        print(f"Invalid limits format. Use: <min,max>. Ex: 100,200")
-        return None
-        
+
     try:
-        # Just test if they are valid floats
         float(value_str)
-        min_val, max_val = limits_str.split(',')
-        float(min_val)
-        float(max_val)
     except ValueError:
-        print(f"Invalid values. All must be numbers.")
+        print(f"Invalid value: '{value_str}' must be a number.")
+        return None
+    
+    if limits_str.lower() == 'fixed':
+            # É 'fixed', o que é válido.
+            pass
+    elif ',' in limits_str:
+        # Pode ser 'min,max'. Vamos checar.
+        try:
+            min_val, max_val = limits_str.split(',')
+            float(min_val)
+            float(max_val)
+        except ValueError:
+            # Tinha vírgula, mas não eram dois números (ex: "100,abc")
+            print(f"Invalid min,max format: '{limits_str}'. Must be two numbers separated by a comma.")
+            return None
+    else:
+        # Não é 'fixed' E não tem vírgula
+        print(f"Invalid limits format: '{limits_str}'. Must be 'fixed' or 'min,max'.")
         return None
     
     # Return the formatted line for the config file
     return f"{param_name}\t{value_str}\t{limits_str}\n"
 
 def manually_edit_config_file(config_file_path, functions_list):
-    """Allows the user to interactively edit the config file."""
-    
+    """
+    Provides an interactive command-line interface for manually editing an IMFIT config file.
+
+    This function is activated in 'single' mode with the '--manual' flag. It reads an existing
+    IMFIT configuration file, then iterates through each parameter, displaying its current value
+    and prompting the user to either keep it or provide a new value and limits. This allows for
+    fine-tuning of the initial guesses before running IMFIT.
+
+    Args:
+        config_file_path (str): The file path to the IMFIT configuration file to be edited.
+        functions_list (list of str): A list of the function names used in the config file,
+                                      which helps in displaying user-friendly prompts.
+
+    Raises:
+        FileNotFoundError: If the specified `config_file_path` does not exist.
+    """
     if not os.path.exists(config_file_path):
         raise FileNotFoundError(f"Config file not found: {config_file_path}")
 
@@ -203,8 +287,25 @@ def manually_edit_config_file(config_file_path, functions_list):
 # ===================================================================
 
 def generate_custom_config(name, functions_list, gal_name, gal_file):
-    """Generates a custom config file from scratch."""
-    
+    """
+    Generates a custom IMFIT configuration file based on a list of specified functions.
+
+    This function is used in 'single' mode when the '--funcs' argument is provided. It creates
+    a new IMFIT configuration file from scratch, using a predefined template for each requested
+    function. It automatically estimates initial parameter guesses (like position, brightness,
+    and size) from the galaxy's FITS data, providing a ready-to-use config file for IMFIT.
+
+    Args:
+        name (str): The general identifier for the run, used for directory naming.
+        functions_list (list of str): A list of IMFIT function names to include in the config.
+        gal_name (str): The base name of the galaxy's FITS file.
+        gal_file (str): The file path to the galaxy's FITS image.
+
+    Returns:
+        tuple: A tuple containing:
+            - int: The number of components (functions) added to the config file.
+            - str: The file path to the newly generated configuration file.
+    """
     config_name = os.path.splitext(gal_name)[0]
     config_dir = f'./{name}/configs'
     os.makedirs(config_dir, exist_ok=True)
@@ -240,55 +341,65 @@ def generate_custom_config(name, functions_list, gal_name, gal_file):
     function_templates = {
         "Sersic": f"""
 FUNCTION Sersic
-I_e\t{ie_value_guess}\t{ie_low},{ie_high}
-r_e\t{re_value_guess}\t{re_low},{re_high}
-n\t1.0\t0.1,8.0
 PA\t{PA_value}\t{pa_low},{pa_high}
 ell\t{ell_value}\t0.0,0.99
-{x0_str}{y0_str}""",
+n\t1.0\t0.1,8.0
+I_e\t{ie_value_guess}\t{ie_low},{ie_high}
+r_e\t{re_value_guess}\t{re_low},{re_high}
+""",
+        "DiskSersic": f"""
+FUNCTION Sersic
+PA\t{PA_value}\t{pa_low},{pa_high}
+ell\t{ell_value}\t0.0,0.99
+n\t1.0\tfixed
+I_e\t5\t0.1,15
+r_e\t20\t10,40
+""",
 
         "FerrersBar2D": f"""
 FUNCTION FerrersBar2D
-I_0\t{ie_value_guess}\t{ie_low},{ie_high}
-r_bar\t{re_value_guess}\t{re_low},{re_high + 30}
-alpha\t2.0\t1.0, 4.0
-beta\t2.0\t1.0, 4.0
-ell_bar\t{ell_value}\t0.0,0.99
-PA_bar\t{PA_value}\t{pa_low},{pa_high}
-{x0_str}{y0_str}""",
+PA_bar\t0\t0,360
+ell_bar\t0.5\t0.3,0.99
+c0\t1.0\t0.5,8.0
+n\t1.0\t0.5,8.0
+I_0\t20\t10,50
+a_bar\t10\t5,40
+""",
 
         "GaussianRing": f"""
 FUNCTION GaussianRing
-I_0\t{ie_value_guess / 2}\t{ie_low / 2},{ie_high / 2}
-r_ring\t{re_value_guess * 1.5}\t{re_low},{re_high + 50}
-width\t5.0\t1.0, 30.0
-ell_ring\t{ell_value}\t0.0,0.99
-PA_ring\t{PA_value}\t{pa_low},{pa_high}
-{x0_str}{y0_str}""",
+PA\t0\t0,360
+ell\t0.5\t0.0,0.99
+A\t5.0\t0.0001,15
+R_ring\t20\t5,50
+Sigma_r\t12\t1,20
+""",
 
         "BrokenExponential": f"""
 FUNCTION BrokenExponential
-I_0\t{ie_value_guess}\t{ie_low},{ie_high}
-h_1\t{re_value_guess}\t{re_low},{re_high}
-h_2\t{re_value_guess * 2}\t{re_low},{re_high * 3}
-r_break\t{re_value_guess * 1.5}\t{re_low * 0.5},{re_high * 1.5}
-PA\t{PA_value}\t{pa_low},{pa_high}
-ell\t{ell_value}\t0.0,0.99
-{x0_str}{y0_str}"""
+PA\t0\t0,360
+ell\t0.5\t0.0,0.99
+I_0\t20\t5,40
+h1\t10\t5,20
+h2\t25\t20,40
+r_break\t20\t10,60
+alpha\t0.5\t0.01,1
+"""
     }
 
     # 3. Write the configuration file
     with open(config_file_path, 'w') as f:
         f.write(f"# Auto-generated config file for {gal_name}\n")
-        f.write(f"# Functions: {', '.join(functions_list)}\n\n")
-        
+        f.write(f"# Functions: {', '.join(functions_list)}\n")
+        f.write(f"{x0_str}\n")
+        f.write(f"{y0_str}\n")
+
         for func_name in functions_list:
             # Find the function in the dictionary (case-insensitive)
             func_key = next((key for key in function_templates if key.lower() == func_name.lower()), None)
             
             if func_key:
                 f.write(function_templates[func_key])
-                f.write("\n\n") # Separator
             else:
                 print(f"Warning: Template for function '{func_name}' not found. Skipping.")
     
@@ -302,8 +413,25 @@ ell\t{ell_value}\t0.0,0.99
 # ===================================================================
 
 def generate_defconfig(name, components, gal_name, gal_file):
-    """Generates config file from Sersic template (sample mode)."""
-    
+    """
+    Generates an IMFIT configuration file from a default Sersic template for sample mode.
+
+    This function is primarily used in 'sample' mode. It takes a template IMFIT configuration
+    file (which typically contains one or more Sersic profiles) and populates it with initial
+    parameter guesses derived from the galaxy's FITS data. This automated approach allows for
+    batch processing of a large number of galaxies without manual intervention.
+
+    Args:
+        name (str): The general identifier for the run, used for directory naming.
+        components (str): The number of components in the template, used to find the correct file.
+        gal_name (str): The base name of the galaxy's FITS file.
+        gal_file (str): The file path to the galaxy's FITS image.
+
+    Returns:
+        tuple: A tuple containing:
+            - int: The number of components in the configuration.
+            - str: The file path to the newly generated configuration file.
+    """
     config_name = os.path.splitext(gal_name)[0]
     config_dir = f'./{name}/configs'
     if not os.path.exists(config_dir):
@@ -410,12 +538,122 @@ def generate_defconfig(name, components, gal_name, gal_file):
     return int(components), config_file_path
 
 
+def generate_chained_config(name, components, gal_name, gal_file, previous_best_fit_file):
+    """
+    Generates a chained IMFIT configuration file for consecutive runs.
+
+    This function is designed for consecutive IMFIT runs, where the best-fit parameters
+    from a previous run are used as initial guesses for the next. It reads the
+    parameters of the first Sersic component from the previous run's output file
+    and uses them to populate the new configuration file.
+
+    Args:
+        name (str): The general identifier for the run.
+        components (str): The number of components for the new configuration.
+        gal_name (str): The base name of the galaxy's FITS file.
+        gal_file (str): The file path to the galaxy's FITS image.
+        previous_best_fit_file (str): The path to the .dat file from the previous run.
+
+    Returns:
+        str: The file path to the newly generated configuration file.
+    """
+    config_name = os.path.splitext(gal_name)[0]
+    config_dir = f'./{name}/configs'
+    os.makedirs(config_dir, exist_ok=True)
+    config_file_path = os.path.join(config_dir, f'{config_name}{components}comp.txt')
+
+    # Read parameters from the previous run
+    with open(previous_best_fit_file, 'r') as f:
+        lines = f.readlines()
+
+    sersic1_params = {}
+    for line in lines:
+        if line.startswith('#') or 'FUNCTION' in line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            param_name, param_value = parts[0], float(parts[1])
+            if param_name in ['I_e', 'r_e', 'n', 'PA', 'ell']:
+                if param_name not in sersic1_params:
+                    sersic1_params[param_name] = param_value
+
+    # Generate the new config file
+    with fits.open(gal_file) as hdu:
+        gal_hdu = hdu[1].data
+
+    center_radius = 20
+    x0, y0 = _find_max_value_coordinates(gal_hdu, center_radius)
+    PA_value, ell_value = _get_major_axis_angle(gal_hdu)
+
+    with open(f'./wraith/{components}comp.txt', 'r') as f:
+        config_lines = f.readlines()
+
+    updated_params = {
+        'ell_1': False, 'PA_1': False, 'I_e_1': False, 'r_e_1': False, 'n_1': False,
+        'ell2': False, 'PA2': False, 'I_e_2': False, 'r_e_2': False, 'n2': False,
+        'X0': False, 'Y0': False
+    }
+
+    sersic_count = 0
+    for i, line in enumerate(config_lines):
+        if "Sersic" in line:
+            sersic_count += 1
+        
+        if sersic_count == 1:
+            for param, value in sersic1_params.items():
+                if line.startswith(param) and not updated_params[f'{param}_1']:
+                    low = value * 0.8
+                    high = value * 1.2
+                    config_lines[i] = f"{param}\t{value}\t{low},{high}\n"
+                    updated_params[f'{param}1'] = True
+
+        elif sersic_count == 2:
+            if line.startswith("I_e") and not updated_params['I_e_2']:
+                ie_value = math.floor(gal_hdu[y0, x0] / 2)
+                ie_low_2 = 0.1
+                ie_high_2 = min(20, ie_value - 20)
+                ie_value_2 = (ie_low_2 + ie_high_2) / 2
+                config_lines[i] = f"I_e\t{ie_value_2}\t{ie_low_2},{ie_high_2}\n"
+                updated_params['I_e_2'] = True
+            elif line.startswith("r_e") and not updated_params['r_e_2']:
+                re_value = _find_pixel_count_until_value(gal_hdu, x0, y0, math.floor(gal_hdu[y0, x0] / 2))
+                re_low_2 = re_value + 21
+                re_high_2 = re_low_2 + 50
+                re_value_2 = (re_low_2 + re_high_2) / 2
+                config_lines[i] = f"r_e\t{re_value_2}\t{re_low_2},{re_high_2}\n"
+                updated_params['r_e_2'] = True
+
+        if line.startswith("X0") and not updated_params['X0']:
+            config_lines[i] = f"X0\t{x0 + 1}\t{x0 - 1},{x0 + 3}\n"
+            updated_params['X0'] = True
+        elif line.startswith("Y0") and not updated_params['Y0']:
+            config_lines[i] = f"Y0\t{y0 + 1}\t{y0 - 1},{y0 + 3}\n"
+            updated_params['Y0'] = True
+
+    with open(config_file_path, 'w') as f:
+        f.writelines(config_lines)
+
+    return config_file_path
 # ===================================================================
 # EXECUTION FUNCTIONS (Unchanged)
 # ===================================================================
 
 def run_imfit(name, components, gal_name, gal_file, imfit_type):
-    
+    """
+    Executes the IMFIT command-line tool with the specified configuration.
+
+    This function constructs and runs the main IMFIT command, providing it with all the
+    necessary files: the galaxy image, the PSF, the mask, and the configuration file.
+    It saves the resulting model, residual image, and best-fit parameters to the
+    results directory. It also handles the generation of flux information for multi-component fits.
+
+    Args:
+        name (str): The general identifier for the run, used for directory naming.
+        components (str): The number of components being fitted, for naming output files.
+        gal_name (str): The base name of the galaxy's FITS file.
+        gal_file (str): The file path to the galaxy's FITS image.
+        imfit_type (str): The type of IMFIT algorithm to use (e.g., 'LevMar', 'NelderMead').
+    """
     def_name = os.path.splitext(gal_name)[0]
     psf_file = f'./{name}/psf/{def_name}psf.fits'
     mask_file = f'./{name}/mask/{def_name}mask.fits'
@@ -444,7 +682,24 @@ def run_imfit(name, components, gal_name, gal_file, imfit_type):
                 print(f"  Missing file: {file}")
                 
 
-def run_imfit_with_check(name, components, gal_name, gal_file, imfit_type):
+def run_imfit_with_check(name, components, gal_name, gal_file, imfit_type, max_check_attempts):
+    """
+    Runs IMFIT and iteratively checks and adjusts parameter limits if they are hit.
+
+    This function provides a more robust way to run IMFIT. After an initial run, it checks
+    if any of the fitted parameters have hit the boundaries of their allowed limits. If so,
+    it automatically adjusts the limits in the configuration file and re-runs the fit.
+    This process is repeated up to a maximum number of attempts, helping to ensure that
+    the final fit is not artificially constrained by the initial parameter ranges.
+
+    Args:
+        name (str): The general identifier for the run, used for directory naming.
+        components (str): The number of components being fitted.
+        gal_name (str): The base name of the galaxy's FITS file.
+        gal_file (str): The file path to the galaxy's FITS image.
+        imfit_type (str): The type of IMFIT algorithm to use.
+        max_check_attempts (int): The maximum number of re-run attempts.
+    """
     def_name = os.path.splitext(gal_name)[0]
     psf_file = f'./{name}/psf/{def_name}psf.fits'
     mask_file = f'./{name}/mask/{def_name}mask.fits'
@@ -452,7 +707,7 @@ def run_imfit_with_check(name, components, gal_name, gal_file, imfit_type):
     results_dir = f'./{name}/results'
     log_dir = f'./log_reports'  # Directory to save logs
     components_int = int(components)
-    max_attempts = 5
+    max_attempts = max_check_attempts
     attempts = 0
     log_content = ""
 
@@ -539,6 +794,26 @@ def run_imfit_with_check(name, components, gal_name, gal_file, imfit_type):
             print(f"Warning: File {best_fit_file} not found. Skipping 'makeimage'.")
 
 def check_for_limits(results_dir, def_name, components, config_file):
+    """
+    Checks if any fitted parameters have hit their specified limits in the config file.
+
+    This function compares the best-fit parameter values from an IMFIT run with the limits
+    defined in the configuration file. It uses a tolerance to determine if a value is close
+    enough to a limit to be considered "hit".
+
+    Args:
+        results_dir (str): The directory containing the IMFIT results.
+        def_name (str): The base name of the galaxy, used to find the results file.
+        components (int): The number of components fitted.
+        config_file (str): The file path to the IMFIT configuration file.
+
+    Returns:
+        tuple: A tuple containing:
+            - str or None: The name of the parameter that hit a limit.
+            - str or None: The type of limit that was hit ('lower' or 'upper').
+            - float or None: The value of the parameter.
+            - bool: True if an adjustment is needed, False otherwise.
+    """
     # Check parameters in results file against limits in config file
     param_file = f'{results_dir}/{def_name}_best{components}comp.dat'
     
@@ -613,6 +888,20 @@ def check_for_limits(results_dir, def_name, components, config_file):
 
 
 def adjust_limits(results_dir, def_name, components, config_file):
+    """
+    Adjusts the limits of a parameter in the config file that has hit its boundary.
+
+    If `check_for_limits` determines that a parameter has hit its upper or lower limit,
+    this function is called to modify the config file. It reads the file, finds the
+    offending parameter, and widens its limits (e.g., by decreasing a lower limit or
+    increasing an upper limit). The modified configuration is then written back to the file.
+
+    Args:
+        results_dir (str): The directory containing the IMFIT results.
+        def_name (str): The base name of the galaxy, used to identify the relevant files.
+        components (int): The number of components fitted.
+        config_file (str): The file path to the IMFIT configuration file to be modified.
+    """
     # Function to adjust config file limits
     if not os.path.exists(config_file):
         print(f"Error: Config file {config_file} not found. Cannot adjust limits.")
